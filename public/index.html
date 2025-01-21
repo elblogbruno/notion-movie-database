@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Movie Search</title>
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+    }
+    .notion-style {
+      background-color: #f7f6f3;
+      color: #2e2e2e;
+    }
+    .notion-style input, .notion-style select, .notion-style button {
+      border-radius: 4px;
+      border: 1px solid #d1d1d1;
+      padding: 8px;
+      margin-bottom: 8px;
+    }
+    .notion-style button {
+      background-color: #2e2e2e;
+      color: #ffffff;
+    }
+    .notion-style button:hover {
+      background-color: #444444;
+    }
+    .notion-style .card {
+      background-color: #ffffff;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 16px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    }
+    .notion-style .card img {
+      border-radius: 4px;
+    }
+    .notion-style .popup {
+      background-color: #ffffff;
+      border-radius: 8px;
+      padding: 16px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    }
+  </style>
+</head>
+<body class="notion-style p-6">
+  <div class="max-w-4xl mx-auto bg-white p-6 rounded-lg shadow-md">
+    <form id="movie-form" class="space-y-4">
+      <input type="text" id="query" placeholder="Search for a movie or series" required class="w-full p-2 border border-gray-300 rounded" />
+    <label for="type" class="sr-only">Select type</label>
+    <select id="type" required class="w-full p-2 border border-gray-300 rounded">
+      <option value="movie">Movie</option>
+      <option value="tv" selected>TV Series</option>
+    </select>
+      <button type="submit" class="w-full bg-blue-500 text-white p-2 rounded">Search</button>
+    </form>
+    <div id="results" class="mt-6 grid grid-cols-3 gap-4"></div>
+    <div id="pagination" class="mt-6 flex justify-between"></div>
+  </div>
+
+  <!-- Popup -->
+  <div id="popup" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden" onclick="closePopup()">
+    <div class="popup max-w-2xl w-full relative overflow-y-auto max-h-full" onclick="event.stopPropagation()">
+      <button id="close-popup" class="absolute top-2 right-2 text-gray-500">&times;</button>
+      <div id="popup-content"></div>
+    </div>
+  </div>
+
+  <script>
+    let currentPage = 1;
+    let totalPages = 1;
+    let searchTimeout = null;
+
+    document.getElementById('movie-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      currentPage = 1;
+      await searchMovies();
+    });
+
+    document.getElementById('query').addEventListener('input', () => {
+      clearTimeout(searchTimeout);
+      searchTimeout = setTimeout(async () => {
+        currentPage = 1;
+        await searchMovies();
+      }, 300); // Esperar 300ms después de que el usuario deje de escribir
+    });
+
+    async function searchMovies() {
+      const query = document.getElementById('query').value;
+      const type = document.getElementById('type').value;
+
+      if (!query) {
+        document.getElementById('results').innerHTML = '';
+        document.getElementById('pagination').innerHTML = '';
+        return;
+      }
+
+      // Search using our backend
+      const response = await fetch(`/api/search?q=${encodeURIComponent(query)}&page=${currentPage}&type=${type}`);
+      const data = await response.json();
+
+      console.log(data);
+      
+      totalPages = data.total_pages;
+      const movies = data.results.slice(0, 6); // Mostrar solo 6 películas por página
+      
+      if (movies.length > 0) {
+        document.getElementById('results').innerHTML = movies.map(movie => `
+          <div class="card cursor-pointer" onclick="showPopup(${movie.id}, '${type}')">
+            <img src="https://image.tmdb.org/t/p/w500${movie.poster_path || ''}" alt="${movie.title || movie.name || 'No title'}" class="w-full h-auto" />
+            <h3 class="text-lg font-bold mt-2">${movie.title || movie.name || 'No title'}</h3>
+          </div>
+        `).join('');
+      } else {
+        document.getElementById('results').innerHTML = '<p class="text-center text-gray-500">No results found</p>';
+      }
+
+      updatePagination();
+    }
+
+    function updatePagination() {
+      document.getElementById('pagination').innerHTML = `
+        <button ${currentPage === 1 ? 'disabled' : ''} onclick="prevPage()" class="bg-gray-300 text-gray-700 p-2 rounded">Previous</button>
+        <span>Page ${currentPage} of ${totalPages}</span>
+        <button ${currentPage === totalPages ? 'disabled' : ''} onclick="nextPage()" class="bg-gray-300 text-gray-700 p-2 rounded">Next</button>
+      `;
+    }
+
+    async function prevPage() {
+      if (currentPage > 1) {
+        currentPage--;
+        await searchMovies();
+      }
+    }
+
+    async function nextPage() {
+      if (currentPage < totalPages) {
+        currentPage++;
+        await searchMovies();
+      }
+    }
+
+    async function showPopup(movieId, type) {
+      const query = document.getElementById('query').value;
+      const response = await fetch(`/api/search?q=${encodeURIComponent(query)}&page=${currentPage}&type=${type}`);
+      const data = await response.json();
+      const movie = data.results.find(movie => movie.id === movieId);
+
+      if (movie) {
+        const statusOptionsResponse = await fetch(`/api/status-options?type=${type}`);
+        const statusOptions = await statusOptionsResponse.json();
+
+        const viewersOptionsResponse = await fetch(`/api/viewers-options?type=${type}`);
+        const viewersOptions = await viewersOptionsResponse.json();
+        console.log(`Viewers options for ${type}:`, viewersOptions); // Agregar registro
+
+        document.getElementById('popup-content').innerHTML = `
+          <div class="flex">
+            <img src="https://image.tmdb.org/t/p/w200${movie.poster_path || ''}" alt="${movie.title || movie.name || 'No title'}" class="w-64 h-auto mr-4">
+            <div>
+            <h2 class="text-xl font-bold">${movie.title || movie.name || 'No title'} (${movie.release_date || movie.first_air_date || 'No release date'})</h2>
+              <p class="mt-4">${movie.overview || 'No overview available'}</p>
+              <select id="status" required class="w-full p-2 border border-gray-300 rounded mt-4">
+                <option value="" disabled selected>Select status</option>
+                ${statusOptions.map(option => `<option value="${option}">${option}</option>`).join('')}
+              </select>
+              <select id="viewers" multiple required class="w-full p-2 border border-gray-300 rounded mt-4">
+                ${viewersOptions.map(option => `<option value="${option}">${option}</option>`).join('')}
+              </select>
+              <button id="add-to-notion" class="w-full bg-green-500 text-white p-2 rounded mt-4">Add to Notion</button>
+            </div>
+          </div>
+        `;
+
+        document.getElementById('add-to-notion').addEventListener('click', async () => {
+          const status = document.getElementById('status').value;
+          const viewers = Array.from(document.getElementById('viewers').selectedOptions).map(option => option.value);
+          const notionResponse = await fetch('/api/notion', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              title: movie.title || movie.name || 'No title',
+              release_date: movie.release_date || movie.first_air_date || 'No release date',
+              platform: 'Netflix', // Example platform
+              genre_ids: movie.genre_ids,
+              total_episodes: movie.total_episodes || 1, // Example total episodes
+              poster_path: movie.poster_path || '',
+              status: status,
+              viewers: viewers,
+              type: type
+            }),
+          });
+          
+          const notionData = await notionResponse.json();
+          alert(notionData.message || 'Error adding movie to Notion.');
+          if (notionResponse.ok) {
+            closePopup();
+          }
+        });
+
+        document.getElementById('popup').classList.remove('hidden');
+      }
+    }
+
+    function closePopup() {
+      document.getElementById('popup').classList.add('hidden');
+    }
+
+    document.getElementById('close-popup').addEventListener('click', closePopup);
+  </script>
+</body>
+</html>
