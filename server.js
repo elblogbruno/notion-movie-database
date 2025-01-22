@@ -250,7 +250,7 @@ app.post('/api/notion', async (req, res) => {
 
     // Obtener la plataforma desde los proveedores de transmisión
     const watchProviders = movie.watch_providers && movie.watch_providers.ES ? movie.watch_providers.ES.flatrate : [];
-    const platform = watchProviders.length > 0 ? watchProviders[0].provider_name : '';
+    const platform = watchProviders.length > 0 ? watchProviders[0].provider_name : null;
 
     const properties = {
       Name: { title: [{ text: { content: `${movie.title || movie.name} (${releaseDate})` } }] },
