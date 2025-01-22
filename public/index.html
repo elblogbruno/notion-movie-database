@@ -38,7 +38,7 @@
     .notion-style .card img {
       border-radius: 4px;
       width: 100%;
-      height: 200px; /* Ajustar la altura de la imagen */
+      height: 150px; /* Ajustar la altura de la imagen */
       object-fit: cover; /* Mostrar la imagen como portada */
     }
     .notion-style .popup {
@@ -46,21 +46,24 @@
       border-radius: 8px;
       padding: 16px;
       box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+      width: 400px; /* Ajustar el ancho del popup */
+      max-height: 80vh; /* Ajustar la altura máxima del popup */
+      overflow-y: auto; /* Habilitar el desplazamiento vertical */
     }
   </style>
 </head>
 <body class="notion-style p-6">
-  <div class="max-w-4xl mx-auto bg-white p-6 rounded-lg shadow-md">
+  <div class="max-w-md mx-auto bg-white p-6 rounded-lg shadow-md">
     <form id="movie-form" class="space-y-4">
       <input type="text" id="query" placeholder="Search for a movie or series" required class="w-full p-2 border border-gray-300 rounded" />
     </form>
-    <div id="results" class="mt-6 grid grid-cols-3 gap-4"></div>
+    <div id="results" class="mt-6 grid grid-cols-1 gap-4"></div>
     <div id="pagination" class="mt-6 flex justify-between"></div>
   </div>
 
   <!-- Popup -->
   <div id="popup" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden" onclick="closePopup()">
-    <div class="popup max-w-2xl w-full relative overflow-y-auto max-h-full" onclick="event.stopPropagation()">
+    <div class="popup relative" onclick="event.stopPropagation()">
       <button id="close-popup" class="absolute top-2 right-2 text-gray-500">&times;</button>
       <div id="popup-content"></div>
     </div>
@@ -96,7 +99,7 @@
       console.log(data);
       
       totalPages = data.total_pages;
-      moviesCache = data.results.slice(0, 6); // Mostrar solo 6 películas por página
+      moviesCache = data.results.slice(0, 3); // Mostrar solo 3 películas por página
       
       if (moviesCache.length > 0) {
         document.getElementById('results').innerHTML = moviesCache.map(movie => {
@@ -155,7 +158,7 @@
 
         document.getElementById('popup-content').innerHTML = `
           <div class="flex">
-            <img src="https://image.tmdb.org/t/p/w200${movie.poster_path || ''}" alt="${movie.title || movie.name || 'No title'}" class="w-64 h-auto mr-4">
+            <img src="https://image.tmdb.org/t/p/w200${movie.poster_path || ''}" alt="${movie.title || movie.name || 'No title'}" class="w-32 h-auto mr-4">
             <div>
             <h2 class="text-xl font-bold">${movie.title || movie.name || 'No title'} (${movie.release_date || movie.first_air_date || 'No release date'})</h2>
               <p class="mt-4">${movie.overview || 'No overview available'}</p>
