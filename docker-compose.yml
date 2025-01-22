@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "${PORT}:${PORT}"
+    environment:
+      - TMDB_API_KEY=${TMDB_API_KEY}
+      - NOTION_API_KEY=${NOTION_API_KEY}
+      - SERIES_DATABASE_ID=${SERIES_DATABASE_ID}
+      - FILM_DATABASE_ID=${FILM_DATABASE_ID}
+      - GENRES_DATABASE_ID=${GENRES_DATABASE_ID}
+      - PORT=${PORT}
+    volumes:
+      - .:/app
+    command: ["npm", "start"]
