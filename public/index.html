@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Movie Search</title>
   <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
@@ -36,6 +37,9 @@
     }
     .notion-style .card img {
       border-radius: 4px;
+      width: 100%;
+      height: 200px; /* Ajustar la altura de la imagen */
+      object-fit: cover; /* Mostrar la imagen como portada */
     }
     .notion-style .popup {
       background-color: #ffffff;
@@ -72,6 +76,7 @@
     let currentPage = 1;
     let totalPages = 1;
     let searchTimeout = null;
+    let moviesCache = [];
 
     document.getElementById('movie-form').addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -104,15 +109,23 @@
       console.log(data);
       
       totalPages = data.total_pages;
-      const movies = data.results.slice(0, 6); // Mostrar solo 6 películas por página
+      moviesCache = data.results.slice(0, 6); // Mostrar solo 6 películas por página
       
-      if (movies.length > 0) {
-        document.getElementById('results').innerHTML = movies.map(movie => `
-          <div class="card cursor-pointer" onclick="showPopup(${movie.id}, '${type}')">
-            <img src="https://image.tmdb.org/t/p/w500${movie.poster_path || ''}" alt="${movie.title || movie.name || 'No title'}" class="w-full h-auto" />
-            <h3 class="text-lg font-bold mt-2">${movie.title || movie.name || 'No title'}</h3>
-          </div>
-        `).join('');
+      if (moviesCache.length > 0) {
+        document.getElementById('results').innerHTML = moviesCache.map(movie => {
+          const providers = movie.watch_providers && movie.watch_providers.ES ? movie.watch_providers.ES.flatrate : [];
+          const providersList = providers && providers.length > 0 ? providers.map(provider => provider.provider_name).join(', ') : 'No providers available';
+          const mediaType = movie.media_type === 'movie' ? 'Movie' : 'TV Series';
+
+          return `
+            <div class="card cursor-pointer" onclick="showPopup(${movie.id}, '${mediaType}')">
+              <img src="https://image.tmdb.org/t/p/w500${movie.poster_path || ''}" alt="${movie.title || movie.name || 'No title'}" class="w-full h-auto" />
+              <h3 class="text-lg font-bold mt-2">${movie.title || movie.name || 'No title'}</h3>
+              <p class="text-sm text-gray-500 mt-1">Type: ${mediaType}</p>
+              <p class="text-sm text-gray-500 mt-1">Providers: ${providersList}</p>
+            </div>
+          `;
+        }).join('');
       } else {
         document.getElementById('results').innerHTML = '<p class="text-center text-gray-500">No results found</p>';
       }
@@ -143,10 +156,7 @@
     }
 
     async function showPopup(movieId, type) {
-      const query = document.getElementById('query').value;
-      const response = await fetch(`/api/search?q=${encodeURIComponent(query)}&page=${currentPage}&type=${type}`);
-      const data = await response.json();
-      const movie = data.results.find(movie => movie.id === movieId);
+      const movie = moviesCache.find(movie => movie.id === movieId);
 
       if (movie) {
         const statusOptionsResponse = await fetch(`/api/status-options?type=${type}`);
@@ -191,9 +201,12 @@
               poster_path: movie.poster_path || '',
               status: status,
               viewers: viewers,
-              type: type
+              type: type,
+              watch_providers: movie.watch_providers || { 'ES': { flatrate: [{provider_name: 'Netflix'}] } }, // Example watch providers
             }),
           });
+
+          console.log(movie.watch_providers);
           
           const notionData = await notionResponse.json();
           alert(notionData.message || 'Error adding movie to Notion.');

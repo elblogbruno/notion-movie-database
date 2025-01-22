@@ -21,18 +21,86 @@ let viewersOptionsCache = {
 app.use(express.static('public'));
 app.use(express.json());
 
+async function loadCache() {
+  try {
+    // Cargar géneros en la caché
+    const genresResponse = await notion.databases.query({
+      database_id: process.env.GENRES_DATABASE_ID,
+    });
+    genresCache = genresResponse.results.map(result => ({
+      id: result.id,
+      name: result.properties.Name.title[0].text.content,
+    }));
+
+    // Cargar opciones de estado en la caché
+    const movieDatabaseResponse = await notion.databases.retrieve({
+      database_id: process.env.FILM_DATABASE_ID,
+    });
+    const tvDatabaseResponse = await notion.databases.retrieve({
+      database_id: process.env.SERIES_DATABASE_ID,
+    });
+
+    const movieStatusProperty = movieDatabaseResponse.properties.Status;
+    const tvStatusProperty = tvDatabaseResponse.properties.Status;
+
+    if (movieStatusProperty && movieStatusProperty.status && movieStatusProperty.status.options) {
+      statusOptionsCache.movie = movieStatusProperty.status.options.map(option => option.name);
+    }
+
+    if (tvStatusProperty && tvStatusProperty.status && tvStatusProperty.status.options) {
+      statusOptionsCache.tv = tvStatusProperty.status.options.map(option => option.name);
+    }
+
+    // Cargar opciones de viewers en la caché
+    const movieViewersProperty = movieDatabaseResponse.properties.Viewers;
+    const tvViewersProperty = tvDatabaseResponse.properties.Viewers;
+
+    if (movieViewersProperty && movieViewersProperty.multi_select && movieViewersProperty.multi_select.options) {
+      viewersOptionsCache.movie = movieViewersProperty.multi_select.options.map(option => option.name);
+    }
+
+    if (tvViewersProperty && tvViewersProperty.multi_select && tvViewersProperty.multi_select.options) {
+      viewersOptionsCache.tv = tvViewersProperty.multi_select.options.map(option => option.name);
+    }
+
+    console.log('Cache loaded successfully');
+  } catch (error) {
+    console.error('Error loading cache:', error);
+  }
+}
+
 app.get('/api/search', async (req, res) => {
   try {
     const query = req.query.q;
     const page = req.query.page || 1;
+    const language = 'es-ES'; // Idioma español
     const fetch = (await import('node-fetch')).default;
     const response = await fetch(
-      `https://api.themoviedb.org/3/search/multi?api_key=${process.env.TMDB_API_KEY}&query=${query}&page=${page}`
+      `https://api.themoviedb.org/3/search/multi?api_key=${process.env.TMDB_API_KEY}&query=${encodeURIComponent(query)}&page=${page}&language=${language}`
     );
     const data = await response.json();
-    res.json(data);
+
+    // Obtener proveedores de transmisión para cada película o programa de televisión
+    const mediaWithProviders = await Promise.all(data.results.map(async (media) => {
+      if (media.media_type === 'movie') {
+        const providersResponse = await fetch(
+          `https://api.themoviedb.org/3/movie/${media.id}/watch/providers?api_key=${process.env.TMDB_API_KEY}`
+        );
+        const providersData = await providersResponse.json();
+        media.watch_providers = providersData.results;
+      } else if (media.media_type === 'tv') {
+        const providersResponse = await fetch(
+          `https://api.themoviedb.org/3/tv/${media.id}/watch/providers?api_key=${process.env.TMDB_API_KEY}`
+        );
+        const providersData = await providersResponse.json();
+        media.watch_providers = providersData.results;
+      }
+      return media;
+    }));
+
+    res.json({ ...data, results: mediaWithProviders });
   } catch (error) {
-    res.status(500).json({ error: 'Error searching movies' });
+    res.status(500).json({ error: 'Error searching media' });
   }
 });
 
@@ -92,7 +160,9 @@ app.get('/api/viewers-options', async (req, res) => {
 app.post('/api/notion', async (req, res) => {
   try {
     const movie = req.body;
-    const databaseId = movie.type === 'movie' ? process.env.FILM_DATABASE_ID : process.env.SERIES_DATABASE_ID;
+    const databaseId = movie.type === 'Movie' ? process.env.FILM_DATABASE_ID : process.env.SERIES_DATABASE_ID;
+
+    console.log('Adding to Notion to database:', databaseId , movie.type);
 
     // Usar release_date o first_air_date
     const releaseDate = movie.release_date || movie.first_air_date || 'No release date';
@@ -165,7 +235,8 @@ app.post('/api/notion', async (req, res) => {
     }
 
     const viewersOptions = viewersOptionsCache[movie.type];
-    console.log(`Viewers options for ${movie.type}:`, viewersOptions); // Agregar registro
+
+    const viewers = movie.viewers || viewersOptions[0];
 
     // Encontrar el género más cercano
     const closestGenres = movie.genre_ids.map(id => {
@@ -177,21 +248,27 @@ app.post('/api/notion', async (req, res) => {
     // Validar el estado
     const status = statusOptions.includes(movie.status) ? movie.status : statusOptions[0];
 
-    // Validar los viewers
-    const viewers = movie.viewers.filter(viewer => viewersOptions.includes(viewer));
+    // Obtener la plataforma desde los proveedores de transmisión
+    const watchProviders = movie.watch_providers && movie.watch_providers.ES ? movie.watch_providers.ES.flatrate : [];
+    const platform = watchProviders.length > 0 ? watchProviders[0].provider_name : '';
+
+    const properties = {
+      Name: { title: [{ text: { content: `${movie.title || movie.name} (${releaseDate})` } }] },
+      Platform: { select: { name: platform } },
+      Genre: { relation: closestGenres },
+      'Cover Image': { files: [{ name: 'cover.jpg', external: { url: `https://image.tmdb.org/t/p/w500${movie.poster_path}` } }] },
+      Status: { status: { name: status } },
+      'Release Date': { date: { start: releaseDate } },
+      Viewers: { multi_select: viewers.map(viewer => ({ name: viewer })) },
+    };
+
+    if (movie.type !== 'Movie') {
+      properties['Total Episodes'] = { number: movie.total_episodes || null };
+    }
 
     const response = await notion.pages.create({
       parent: { database_id: databaseId },
-      properties: {
-        Name: { title: [{ text: { content: `${movie.title || movie.name} (${releaseDate})` } }] },
-        Platform: { select: { name: movie.platform || '' } },
-        Genre: { relation: closestGenres },
-        'Total Episodes': { number: movie.total_episodes || null },
-        'Cover Image': { files: [{ name: 'cover.jpg', external: { url: `https://image.tmdb.org/t/p/w500${movie.poster_path}` } }] },
-        Status: { status: { name: status } },
-        'Release Date': { date: { start: releaseDate } },
-        Viewers: { multi_select: viewers.map(viewer => ({ name: viewer })) },
-      },
+      properties: properties,
     });
     
     res.json({ message: 'Movie added successfully' });
@@ -201,7 +278,8 @@ app.post('/api/notion', async (req, res) => {
   }
 });
 
-app.listen(port, () => {
+app.listen(port, async () => {
+  await loadCache();
   console.log(`Server running on port ${port}`);
 });
 
