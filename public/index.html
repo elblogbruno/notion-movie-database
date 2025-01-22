@@ -7,12 +7,19 @@
   <title>Movie Search</title>
   <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
   <style>
-    body {
+    body, html {
+      height: 100%;
+      margin: 0;
       font-family: 'Inter', sans-serif;
     }
     .notion-style {
       background-color: #f7f6f3;
       color: #2e2e2e;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
     }
     .notion-style input, .notion-style select, .notion-style button {
       border-radius: 4px;
@@ -34,6 +41,8 @@
       padding: 16px;
       margin-bottom: 16px;
       box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+      width: 100%; /* Ajustar el ancho de las tarjetas */
+      height: 350px; /* Establecer una altura fija para las tarjetas */
     }
     .notion-style .card img {
       border-radius: 4px;
@@ -41,40 +50,50 @@
       height: 150px; /* Ajustar la altura de la imagen */
       object-fit: cover; /* Mostrar la imagen como portada */
     }
+    .notion-style .popup-container {
+      position: relative;
+    }
     .notion-style .popup {
       background-color: #ffffff;
       border-radius: 8px;
       padding: 16px;
       box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-      width: 400px; /* Ajustar el ancho del popup */
+      width: 600px; /* Ajustar el ancho del popup */
       max-height: 80vh; /* Ajustar la altura máxima del popup */
       overflow-y: auto; /* Habilitar el desplazamiento vertical */
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+    }
+    .notion-style .popup img {
+      width: 200px; /* Ajustar el ancho de la imagen en el popup */
+      height: auto;
+      border-radius: 4px;
+      margin-right: 16px;
     }
   </style>
 </head>
-<body class="notion-style p-6">
-  <div class="max-w-4xl mx-auto bg-white p-6 rounded-lg shadow-md">
+<body class="notion-style">
+  <div class="max-w-4xl w-full bg-white p-6 rounded-lg shadow-md popup-container">
     <form id="movie-form" class="space-y-4">
-      <input type="text" id="query" placeholder="Search for a movie or series" required class="w-full p-2 border border-gray-300 rounded" />
+      <input type="text" id="query" placeholder="Search for a movie or series" required class="w-full p-2 border border-gray-300 rounded"/>
     </form>
     <div id="results" class="mt-6 grid grid-cols-3 gap-4"></div>
     <div id="pagination" class="mt-6 flex justify-between"></div>
   </div>
-
   <!-- Popup -->
   <div id="popup" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden" onclick="closePopup()">
     <div class="popup relative" onclick="event.stopPropagation()">
       <button id="close-popup" class="absolute top-2 right-2 text-gray-500">&times;</button>
-      <div id="popup-content"></div>
+      <div id="popup-content" class="flex"></div>
     </div>
   </div>
-
   <script>
     let currentPage = 1;
     let totalPages = 1;
     let searchTimeout = null;
     let moviesCache = [];
-
     document.getElementById('query').addEventListener('input', () => {
       clearTimeout(searchTimeout);
       searchTimeout = setTimeout(async () => {
@@ -82,34 +101,27 @@
         await searchMovies();
       }, 300); // Esperar 300ms después de que el usuario deje de escribir
     });
-
     async function searchMovies() {
       const query = document.getElementById('query').value;
-
       if (!query) {
         document.getElementById('results').innerHTML = '';
         document.getElementById('pagination').innerHTML = '';
         return;
       }
-
       // Search using our backend
       const response = await fetch(`/api/search?q=${encodeURIComponent(query)}&page=${currentPage}`);
       const data = await response.json();
-
       console.log(data);
-      
       totalPages = data.total_pages;
       moviesCache = data.results.slice(0, 3); // Mostrar solo 3 películas por página
-      
       if (moviesCache.length > 0) {
         document.getElementById('results').innerHTML = moviesCache.map(movie => {
           const providers = movie.watch_providers && movie.watch_providers.ES ? movie.watch_providers.ES.flatrate : [];
           const providersList = providers && providers.length > 0 ? providers.map(provider => provider.provider_name).join(', ') : 'No providers available';
           const mediaType = movie.media_type === 'movie' ? 'Movie' : 'TV Series';
-
           return `
             <div class="card cursor-pointer" onclick="showPopup(${movie.id}, '${mediaType}')">
-              <img src="https://image.tmdb.org/t/p/w500${movie.poster_path || ''}" alt="${movie.title || movie.name || 'No title'}" class="w-full h-auto" />
+              <img src="https://image.tmdb.org/t/p/w500${movie.poster_path || ''}" alt="${movie.title || movie.name || 'No title'}" class="w-full h-auto"/>
               <h3 class="text-lg font-bold mt-2">${movie.title || movie.name || 'No title'}</h3>
               <p class="text-sm text-gray-500 mt-1">Type: ${mediaType}</p>
               <p class="text-sm text-gray-500 mt-1">Providers: ${providersList}</p>
@@ -119,10 +131,8 @@
       } else {
         document.getElementById('results').innerHTML = '<p class="text-center text-gray-500">No results found</p>';
       }
-
       updatePagination();
     }
-
     function updatePagination() {
       document.getElementById('pagination').innerHTML = `
         <button ${currentPage === 1 ? 'disabled' : ''} onclick="prevPage()" class="bg-gray-300 text-gray-700 p-2 rounded">Previous</button>
@@ -130,50 +140,41 @@
         <button ${currentPage === totalPages ? 'disabled' : ''} onclick="nextPage()" class="bg-gray-300 text-gray-700 p-2 rounded">Next</button>
       `;
     }
-
     async function prevPage() {
       if (currentPage > 1) {
         currentPage--;
         await searchMovies();
       }
     }
-
     async function nextPage() {
       if (currentPage < totalPages) {
         currentPage++;
         await searchMovies();
       }
     }
-
     async function showPopup(movieId, type) {
       const movie = moviesCache.find(movie => movie.id === movieId);
-
       if (movie) {
         const statusOptionsResponse = await fetch(`/api/status-options?type=${type}`);
         const statusOptions = await statusOptionsResponse.json();
-
         const viewersOptionsResponse = await fetch(`/api/viewers-options?type=${type}`);
         const viewersOptions = await viewersOptionsResponse.json();
         console.log(`Viewers options for ${type}:`, viewersOptions); // Agregar registro
-
         document.getElementById('popup-content').innerHTML = `
-          <div class="flex">
-            <img src="https://image.tmdb.org/t/p/w200${movie.poster_path || ''}" alt="${movie.title || movie.name || 'No title'}" class="w-32 h-auto mr-4">
-            <div>
+          <img src="https://image.tmdb.org/t/p/w200${movie.poster_path || ''}" alt="${movie.title || movie.name || 'No title'}">
+          <div>
             <h2 class="text-xl font-bold">${movie.title || movie.name || 'No title'} (${movie.release_date || movie.first_air_date || 'No release date'})</h2>
-              <p class="mt-4">${movie.overview || 'No overview available'}</p>
-              <select id="status" required class="w-full p-2 border border-gray-300 rounded mt-4">
-                <option value="" disabled selected>Select status</option>
-                ${statusOptions.map(option => `<option value="${option}">${option}</option>`).join('')}
-              </select>
-              <select id="viewers" multiple required class="w-full p-2 border border-gray-300 rounded mt-4">
-                ${viewersOptions.map(option => `<option value="${option}">${option}</option>`).join('')}
-              </select>
-              <button id="add-to-notion" class="w-full bg-green-500 text-white p-2 rounded mt-4">Add to Notion</button>
-            </div>
+            <p class="mt-4">${movie.overview || 'No overview available'}</p>
+            <select id="status" required class="w-full p-2 border border-gray-300 rounded mt-4">
+              <option value="" disabled selected>Select status</option>
+              ${statusOptions.map(option => `<option value="${option}">${option}</option>`).join('')}
+            </select>
+            <select id="viewers" multiple required class="w-full p-2 border border-gray-300 rounded mt-4">
+              ${viewersOptions.map(option => `<option value="${option}">${option}</option>`).join('')}
+            </select>
+            <button id="add-to-notion" class="w-full bg-green-500 text-white p-2 rounded mt-4">Add to Notion</button>
           </div>
         `;
-
         document.getElementById('add-to-notion').addEventListener('click', async () => {
           const status = document.getElementById('status').value;
           const viewers = Array.from(document.getElementById('viewers').selectedOptions).map(option => option.value);
@@ -195,24 +196,19 @@
               watch_providers: movie.watch_providers || { 'ES': { flatrate: [{provider_name: 'Netflix'}] } }, // Example watch providers
             }),
           });
-
           console.log(movie.watch_providers);
-          
           const notionData = await notionResponse.json();
           alert(notionData.message || 'Error adding movie to Notion.');
           if (notionResponse.ok) {
             closePopup();
           }
         });
-
         document.getElementById('popup').classList.remove('hidden');
       }
     }
-
     function closePopup() {
       document.getElementById('popup').classList.add('hidden');
     }
-
     document.getElementById('close-popup').addEventListener('click', closePopup);
   </script>
 </body>
