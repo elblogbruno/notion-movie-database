@@ -254,13 +254,16 @@ app.post('/api/notion', async (req, res) => {
 
     const properties = {
       Name: { title: [{ text: { content: `${movie.title || movie.name} (${releaseDate})` } }] },
-      Platform: { select: { name: platform } },
       Genre: { relation: closestGenres },
       'Cover Image': { files: [{ name: 'cover.jpg', external: { url: `https://image.tmdb.org/t/p/w500${movie.poster_path}` } }] },
       Status: { status: { name: status } },
       'Release Date': { date: { start: releaseDate } },
       Viewers: { multi_select: viewers.map(viewer => ({ name: viewer })) },
     };
+
+    if (platform) {
+      properties.Platform = { select: { name: platform } };
+    }
 
     if (movie.type !== 'Movie') {
       properties['Total Episodes'] = { number: movie.total_episodes || null };
